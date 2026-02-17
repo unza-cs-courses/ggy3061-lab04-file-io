@@ -1,0 +1,121 @@
+name: Autograding Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate Variant Config
+        run: |
+          python - <<'PY'
+          import importlib.util
+          import json
+          import os
+
+          spec = importlib.util.spec_from_file_location("get_variant", "scripts/get_variant.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+
+          variant = module.get_my_variant()
+          with open(".variant_config.json", "w", encoding="utf-8") as f:
+              json.dump(variant, f, indent=2)
+
+          print(
+              "Generated variant for {student} (group {group}) in {repo}".format(
+                  student=variant.get("student_id", "unknown"),
+                  group=variant.get("group_id"),
+                  repo=os.environ.get("GITHUB_REPOSITORY", "local"),
+              )
+          )
+          PY
+
+      - name: Install Dependencies
+        run: |
+          pip install pytest pytest-json-report
+
+      - name: Run Visible Tests
+        run: |
+          pytest tests/visible/ \
+            --json-report \
+            --json-report-file=visible_results.json \
+            -v --tb=short
+
+      - name: Run Hidden Tests
+        if: always()
+        run: |
+          pytest tests/hidden/ \
+            --json-report \
+            --json-report-file=hidden_results.json \
+            -v --tb=short
+
+      - name: Calculate Score
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+
+          def load_results(path):
+              try:
+                  with open(path) as f:
+                      data = json.load(f)
+                  return data["summary"]["passed"], data["summary"]["total"]
+              except Exception:
+                  return 0, 0
+
+          vis_passed, vis_total = load_results("visible_results.json")
+          hid_passed, hid_total = load_results("hidden_results.json")
+
+          vis_score = (vis_passed / vis_total * 40) if vis_total > 0 else 0
+          hid_score = (hid_passed / hid_total * 30) if hid_total > 0 else 0
+          total_score = vis_score + hid_score
+
+          lines = []
+          lines.append("## Lab 4: File I/O - Test Results")
+          lines.append("")
+          lines.append(f"**Total Score: {total_score:.1f} / 70**")
+          lines.append("")
+          lines.append(f"| Component | Passed | Total | Weight | Score |")
+          lines.append(f"|-----------|--------|-------|--------|-------|")
+          lines.append(f"| Visible   | {vis_passed} | {vis_total} | 40 | {vis_score:.1f} |")
+          lines.append(f"| Hidden    | {hid_passed} | {hid_total} | 30 | {hid_score:.1f} |")
+          lines.append("")
+
+          if total_score >= 70:
+              lines.append("All tests passed! Great work!")
+          elif total_score >= 49:
+              lines.append("Good progress - review the failed tests.")
+          else:
+              lines.append("Review the test output and check your code.")
+
+          report = "\n".join(lines)
+          print(report)
+
+          with open("score_summary.txt", "w") as f:
+              f.write(report)
+          PY
+          cat score_summary.txt >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            visible_results.json
+            hidden_results.json
