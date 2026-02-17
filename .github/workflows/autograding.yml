@@ -56,14 +56,6 @@ jobs:
             --json-report-file=visible_results.json \
             -v --tb=short
 
-      - name: Run Hidden Tests
-        if: always()
-        run: |
-          pytest tests/hidden/ \
-            --json-report \
-            --json-report-file=hidden_results.json \
-            -v --tb=short
-
       - name: Calculate Score
         if: always()
         run: |
@@ -79,29 +71,16 @@ jobs:
                   return 0, 0
 
           vis_passed, vis_total = load_results("visible_results.json")
-          hid_passed, hid_total = load_results("hidden_results.json")
 
-          vis_score = (vis_passed / vis_total * 40) if vis_total > 0 else 0
-          hid_score = (hid_passed / hid_total * 30) if hid_total > 0 else 0
-          total_score = vis_score + hid_score
+          score = (vis_passed / vis_total * 40) if vis_total > 0 else 0
 
           lines = []
           lines.append("## Lab 4: File I/O - Test Results")
           lines.append("")
-          lines.append(f"**Total Score: {total_score:.1f} / 70**")
+          lines.append(f"**Visible Test Score: {score:.1f}/40**")
+          lines.append(f"Passed: {vis_passed}/{vis_total}")
           lines.append("")
-          lines.append(f"| Component | Passed | Total | Weight | Score |")
-          lines.append(f"|-----------|--------|-------|--------|-------|")
-          lines.append(f"| Visible   | {vis_passed} | {vis_total} | 40 | {vis_score:.1f} |")
-          lines.append(f"| Hidden    | {hid_passed} | {hid_total} | 30 | {hid_score:.1f} |")
-          lines.append("")
-
-          if total_score >= 70:
-              lines.append("All tests passed! Great work!")
-          elif total_score >= 49:
-              lines.append("Good progress - review the failed tests.")
-          else:
-              lines.append("Review the test output and check your code.")
+          lines.append("*Hidden tests (30 points) will be graded separately after the deadline.*")
 
           report = "\n".join(lines)
           print(report)
@@ -118,4 +97,3 @@ jobs:
           name: test-results
           path: |
             visible_results.json
-            hidden_results.json
